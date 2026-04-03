@@ -327,8 +327,6 @@ class SmartRouter:
           {
             "provider": provider name,
             "model": actual model to use,
-            "api_key": API key for the provider,
-            "base_url": base URL for the provider,
           }
         Raises RuntimeError if no providers available.
         """
@@ -364,9 +362,23 @@ class SmartRouter:
         return {
             "provider": provider.name,
             "model": model,
-            "api_key": provider.api_key or "none",
-            "provider_object": provider,
         }
+
+    def get_provider_api_key(self, provider_name: str) -> Optional[str]:
+        """
+        Retrieve the API key for a named provider for internal use only.
+
+        WARNING: This method exposes sensitive credentials. The returned API key
+        must never be logged, serialised, or forwarded to untrusted code. Use this
+        only when the calling code needs the key to make a direct API call to the
+        provider.
+        """
+        provider = next(
+            (p for p in self.providers if p.name == provider_name), None
+        )
+        if provider is None:
+            return None
+        return provider.api_key
 
     async def record_result(
         self,
