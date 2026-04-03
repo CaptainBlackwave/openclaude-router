@@ -228,3 +228,116 @@ def test_status_contains_required_fields():
     for field in ["provider", "healthy", "latency_ms",
                   "cost_per_1k", "requests", "errors", "score"]:
         assert field in status
+
+
+# ── SSRF Protection: _is_url_safe() ────────────────────────────────────────────
+
+def test_is_url_safe_blocks_aws_metadata():
+    r = make_router()
+    assert r._is_url_safe("http://169.254.169.254/latest/meta-data/") is False
+    assert r._is_url_safe("http://169.254.169.254/") is False
+
+
+def test_is_url_safe_blocks_private_ip():
+    r = make_router()
+    assert r._is_url_safe("http://10.0.0.5/internal") is False
+    assert r._is_url_safe("http://192.168.1.1/admin") is False
+    assert r._is_url_safe("http://172.16.0.1/secret") is False
+
+
+def test_is_url_safe_allows_localhost():
+    r = make_router()
+    assert r._is_url_safe("http://localhost:11434/api/tags") is True
+
+
+def test_is_url_safe_allows_127_0_0_1():
+    r = make_router()
+    assert r._is_url_safe("http://127.0.0.1:1337/v1/models") is True
+
+
+def test_is_url_safe_allows_https_public():
+    r = make_router()
+    assert r._is_url_safe("https://api.openai.com/v1/models") is True
+    assert r._is_url_safe("https://generativelanguage.googleapis.com/v1/models") is True
+
+
+def test_is_url_safe_blocks_non_http_schemes():
+    r = make_router()
+    assert r._is_url_safe("ftp://example.com/file") is False
+    assert r._is_url_safe("file:///etc/passwd") is False
+    assert r._is_url_safe("gopher://evil.com") is False
+
+
+@pytest.mark.asyncio
+async def test_ping_provider_blocks_unsafe_url():
+    """Pinging an unsafe URL marks provider unhealthy without making a request."""
+    p = Provider(
+        name="evil",
+        ping_url="http://169.254.169.254/latest/meta-data/",
+        api_key_env="FAKE_KEY",
+        cost_per_1k_tokens=0.0,
+        big_model="evil-big",
+        small_model="evil-small",
+    )
+    r = make_router(providers=[p])
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        await r._ping_provider(p)
+        # Should NOT have made a real request
+        mock_get.assert_not_called()
+        assert p.healthy is False
+
+
+@pytest.mark.asyncio
+async def test_ping_provider_blocks_private_ip():
+    """Pinging http://10.0.0.5/internal is blocked."""
+    p = Provider(
+        name="internal",
+        ping_url="http://10.0.0.5/internal",
+        api_key_env="FAKE_KEY",
+        cost_per_1k_tokens=0.0,
+        big_model="internal-big",
+        small_model="internal-small",
+    )
+    r = make_router(providers=[p])
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        await r._ping_provider(p)
+        mock_get.assert_not_called()
+        assert p.healthy is False
+
+
+@pytest.mark.asyncio
+async def test_ping_provider_allows_localhost():
+    """Pinging http://localhost:11434/api/tags is allowed (Ollama)."""
+    p = Provider(
+        name="ollama",
+        ping_url="http://localhost:11434/api/tags",
+        api_key_env="",
+        cost_per_1k_tokens=0.0,
+        big_model="ollama-big",
+        small_model="ollama-small",
+    )
+    r = make_router(providers=[p])
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_response):
+        await r._ping_provider(p)
+        assert p.healthy is True
+
+
+@pytest.mark.asyncio
+async def test_ping_provider_allows_127_0_0_1():
+    """Pinging http://127.0.0.1:1337/v1/models is allowed."""
+    p = Provider(
+        name="atomic-chat",
+        ping_url="http://127.0.0.1:1337/v1/models",
+        api_key_env="",
+        cost_per_1k_tokens=0.0,
+        big_model="ac-big",
+        small_model="ac-small",
+    )
+    r = make_router(providers=[p])
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_response):
+        await r._ping_provider(p)
+        assert p.healthy is True

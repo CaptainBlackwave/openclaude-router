@@ -25,11 +25,13 @@ Contribution to: https://github.com/Gitlawb/openclaude
 """
 
 import asyncio
+import ipaddress
 import logging
 import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import urlparse
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -175,11 +177,65 @@ class SmartRouter:
             )
         self._initialized = True
 
+    def _is_url_safe(self, url: str) -> bool:
+        """Check if a URL is safe to ping (no SSRF targets).
+
+        Allows only http/https schemes.
+        Allows localhost, 127.0.0.1, ::1 (needed for local providers like Ollama).
+        Blocks cloud metadata (169.254.169.254) and all private IP ranges.
+        """
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return False
+
+        # Only allow http and https schemes
+        if parsed.scheme not in ("http", "https"):
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+
+        # Allow localhost variants by name
+        if hostname.lower() in ("localhost", "::1"):
+            return True
+
+        # Resolve and check IP addresses
+        try:
+            ip = ipaddress.ip_address(hostname)
+        # Hostname is not a literal IP — only allow public names with https
+        except ValueError:
+            if parsed.scheme == "https":
+                return True  # e.g., api.openai.com
+            return False  # unresolvable hostnames over http are too risky
+
+        # Explicitly block cloud metadata
+        if hostname == "169.254.169.254":
+            return False
+
+        # Block private/reserved IP ranges
+        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+            # Allow loopback (127.0.0.1, ::1) for local providers
+            if ip.is_loopback:
+                return True
+            return False
+
+        return True
+
     async def _ping_provider(self, provider: Provider) -> None:
         """Measure latency to a provider's health endpoint."""
         if not provider.is_configured:
             provider.healthy = False
             logger.debug(f"SmartRouter: {provider.name} skipped — no API key")
+            return
+
+        if not self._is_url_safe(provider.ping_url):
+            provider.healthy = False
+            logger.warning(
+                f"SmartRouter: {provider.name} blocked — unsafe ping URL: "
+                f"{provider.ping_url}"
+            )
             return
 
         headers = {}
