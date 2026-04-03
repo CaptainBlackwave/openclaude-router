@@ -19,7 +19,7 @@ def fake_api_key(monkeypatch):
     monkeypatch.setenv("FAKE_KEY", "test-key")
 
 def make_provider(name, healthy=True, configured=True,
-                  latency=100.0, cost=0.002, errors=0, requests=0):
+                  latency=100.0, cost=0.0, errors=0, requests=0):
     p = Provider(
         name=name,
         ping_url=f"https://{name}.example.com/health",
@@ -62,8 +62,8 @@ def test_score_latency_strategy_prefers_faster():
 
 
 def test_score_cost_strategy_prefers_cheaper():
-    cheap = make_provider("cheap", latency=500.0, cost=0.0001)
-    expensive = make_provider("expensive", latency=50.0, cost=0.05)
+    cheap = make_provider("cheap", latency=500.0, cost=0.0)
+    expensive = make_provider("expensive", latency=50.0, cost=0.01)
     assert cheap.score("cost") < expensive.score("cost")
 
 

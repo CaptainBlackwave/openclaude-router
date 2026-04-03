@@ -130,6 +130,78 @@ def build_default_providers() -> list[Provider]:
             big_model=big if "gemini" not in big and "gpt" not in big else "llama3:8b",
             small_model=small if "gemini" not in small and "gpt" not in small else "llama3:8b",
         ),
+        Provider(
+            name="olmo",
+            ping_url="https://api-inference.huggingface.co/models/allenai/OLMo-7B",
+            api_key_env="HF_API_KEY",
+            cost_per_1k_tokens=0.0,   # free — open-source via Hugging Face free tier
+            big_model="allenai/OLMo-7B",
+            small_model="allenai/OLMo-1B",
+        ),
+        Provider(
+            name="localai",
+            ping_url="http://localhost:8080/v1/models",
+            api_key_env="",
+            cost_per_1k_tokens=0.0,   # free — local
+            big_model="glm-5",  # configurable
+            small_model="glm-5",
+        ),
+        Provider(
+            name="replicate",
+            ping_url="https://api.replicate.com/v1/models",
+            api_key_env="REPLICATE_API_KEY",
+            cost_per_1k_tokens=0.0,   # free tier available
+            big_model="z-ai/glm-5",
+            small_model="z-ai/glm-5",
+        ),
+        Provider(
+            name="siliconflow",
+            ping_url="https://api.siliconflow.cn/v1/user/info",
+            api_key_env="SILICONFLOW_API_KEY",
+            cost_per_1k_tokens=0.0,   # free tier
+            big_model="z-ai/glm-5",
+            small_model="z-ai/glm-5",
+        ),
+        Provider(
+            name="together",
+            ping_url="https://api.together.xyz/v1/models",
+            api_key_env="TOGETHER_API_KEY",
+            cost_per_1k_tokens=0.0,   # free tier available
+            big_model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            small_model="meta-llama/Llama-3.2-3B-Instruct-Turbo",
+        ),
+        Provider(
+            name="deepinfra",
+            ping_url="https://api.deepinfra.com/v1/models",
+            api_key_env="DEEPINFRA_API_KEY",
+            cost_per_1k_tokens=0.0,   # free inference
+            big_model="meta-llama/Llama-3.3-70B-Instruct",
+            small_model="meta-llama/Llama-3.2-3B-Instruct",
+        ),
+        Provider(
+            name="openrouter",
+            ping_url="https://openrouter.ai/api/v1/models",
+            api_key_env="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",
+            cost_per_1k_tokens=0.0,   # free credits/trial
+            big_model="z-ai/glm-5",
+            small_model="z-ai/glm-5",
+        ),
+        Provider(
+            name="apifreellm",
+            ping_url="https://api.apifreellm.com/v1/models",
+            api_key_env="apf_ygw0tvc6emkc3xkb6hxtf56f",
+            cost_per_1k_tokens=0.0,   # free unlimited
+            big_model="gpt-4o",
+            small_model="gpt-3.5-turbo",
+        ),
+        Provider(
+            name="llmapi",
+            ping_url="https://api.llmapi.ai/v1/models",
+            api_key_env="llmapi_d3f83f1c23a7645d1d3829944c3274211476ab602b72ea6b3f08a46559e6feeb",
+            cost_per_1k_tokens=0.0,   # free unified API
+            big_model="glm-4.7-flash",
+            small_model="glm-4.6v-flash",
+        ),
     ]
 
 
@@ -272,11 +344,12 @@ class SmartRouter:
     def select_provider(self, is_large_request: bool = False) -> Optional[Provider]:
         """
         Pick the best available provider for this request.
+        Only considers free providers (cost_per_1k_tokens == 0.0).
         Returns None if no providers are available.
         """
         available = [
             p for p in self.providers
-            if p.healthy and p.is_configured
+            if p.healthy and p.is_configured and p.cost_per_1k_tokens == 0.0
         ]
         if not available:
             return None
